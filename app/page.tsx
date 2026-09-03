@@ -106,6 +106,7 @@ export default function DiscoveryEngine() {
   const [error, setError] = useState<string>("");
   const [scrapeResult, setScrapeResult] = useState<ScrapeResult | null>(null);
   const [scrapeLoading, setScrapeLoading] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
 
   useEffect(() => {
     fetchScores();
@@ -579,46 +580,124 @@ export default function DiscoveryEngine() {
                   ))}
                 </div>
 
-                {scrapeResult.playStore.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
-                        Play Store Live Reviews ({scrapeResult.playStore.length} extracted & classified)
-                      </h3>
-                      <span className="text-xs text-slate-500">Showing top 50 recent shopper reviews</span>
-                    </div>
-                    <div className="space-y-3">
-                      {scrapeResult.playStore.slice(0, 50).map((item, i) => (
-                        <div key={i} className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
-                          <div className="flex items-center gap-2 flex-wrap mb-2">
-                            <span className="text-xs bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">T4</span>
-                            <span className="text-xs text-slate-400">Play Store</span>
-                            {item.rating && (
-                              <span className={`text-xs px-1.5 py-0.5 rounded ${item.rating <= 2 ? "bg-red-900/40 text-red-400" : "bg-slate-700 text-slate-400"}`}>
-                                {"★".repeat(item.rating)}
+                {/* Category Breakdown & Filter Bar */}
+                {scrapeResult.playStore.length > 0 && (() => {
+                  const CATEGORY_MAP: Record<string, { label: string; desc: string }> = {
+                    QUALITY: { label: "Fabric & Quality Uncertainty", desc: "Concerns regarding material feel, duplicate items, or listing discrepancies" },
+                    PRICE: { label: "Price Sensitivity & Extra Fees", desc: "Hesitation due to current retail pricing, delivery fees, or sudden price spikes" },
+                    TRUST: { label: "Return, Refund & Service Trust", desc: "Friction in return tag verification, delayed pickups, and customer service" },
+                    SALE: { label: "Discount & Coupon Anticipation", desc: "Waiting for seasonal sales (EORS), working coupon codes, or special offers" },
+                    AVAIL: { label: "Size Availability & Out-of-Stock", desc: "Desired size or variant out-of-stock when attempting to finalize purchase" },
+                    FIT: { label: "Fit & Sizing Uncertainty", desc: "Anxiety regarding true-to-fit sizing, exchanges, and fit-assistance gaps" },
+                    INFO: { label: "General Experience & App Navigation", desc: "General shopping feedback, wishlist feature accessibility, and app ease" },
+                  };
+
+                  const categoryCounts: Record<string, number> = {};
+                  scrapeResult.playStore.forEach((item) => {
+                    const itemThemes = item.themes && item.themes.length > 0 ? item.themes : ["INFO"];
+                    itemThemes.forEach((t) => {
+                      categoryCounts[t] = (categoryCounts[t] || 0) + 1;
+                    });
+                  });
+
+                  const filteredItems = selectedCategory === "ALL"
+                    ? scrapeResult.playStore
+                    : scrapeResult.playStore.filter((item) => item.themes?.includes(selectedCategory));
+
+                  return (
+                    <div className="space-y-6">
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">
+                          Categorized Review Breakdown ({scrapeResult.playStore.length} Total Shopper Records)
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          <button
+                            onClick={() => setSelectedCategory("ALL")}
+                            className={`p-3 rounded-xl text-left border transition-all ${
+                              selectedCategory === "ALL"
+                                ? "bg-indigo-950/80 border-indigo-500 text-white shadow-lg shadow-indigo-950/50"
+                                : "bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800"
+                            }`}
+                          >
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">All Scrapes</span>
+                              <span className="text-sm font-bold bg-indigo-900/60 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-700">
+                                {scrapeResult.playStore.length}
                               </span>
-                            )}
-                            {item.themes?.map((t) => (
-                              <span key={t} className="text-xs bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded">{THEME_LABELS[t] || t}</span>
-                            ))}
-                            {item.sentiment && (
-                              <span className={`text-xs px-1.5 py-0.5 rounded ${
-                                item.sentiment === "negative" ? "text-red-400" :
-                                item.sentiment === "positive" ? "text-emerald-400" : "text-slate-400"
-                              }`}>{item.sentiment}</span>
-                            )}
-                          </div>
-                          <p className="text-sm text-slate-200 italic">"{item.keyQuote || item.text.slice(0, 150)}"</p>
-                          {item.hypothesesSupported && item.hypothesesSupported.length > 0 && (
-                            <p className="text-xs text-slate-500 mt-1">
-                              Supports: {item.hypothesesSupported.join(", ")}
-                            </p>
-                          )}
+                            </div>
+                            <div className="text-xs text-slate-400">Complete raw shopper dataset across all dimensions</div>
+                          </button>
+
+                          {Object.entries(CATEGORY_MAP).map(([catKey, catMeta]) => {
+                            const count = categoryCounts[catKey] || 0;
+                            const isSelected = selectedCategory === catKey;
+                            return (
+                              <button
+                                key={catKey}
+                                onClick={() => setSelectedCategory(catKey)}
+                                className={`p-3 rounded-xl text-left border transition-all ${
+                                  isSelected
+                                    ? "bg-indigo-950/80 border-indigo-500 text-white shadow-lg shadow-indigo-950/50"
+                                    : "bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800"
+                                }`}
+                              >
+                                <div className="flex justify-between items-center mb-1">
+                                  <span className="text-xs font-semibold text-white line-clamp-1">{catMeta.label}</span>
+                                  <span className="text-sm font-bold bg-slate-700/80 text-indigo-300 px-2 py-0.5 rounded-full border border-slate-600">
+                                    {count}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-slate-400 line-clamp-2">{catMeta.desc}</div>
+                              </button>
+                            );
+                          })}
                         </div>
-                      ))}
+                      </div>
+
+                      {/* Filtered Reviews List */}
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
+                            {selectedCategory === "ALL" ? "All Reviews" : CATEGORY_MAP[selectedCategory]?.label} ({filteredItems.length} records)
+                          </h3>
+                          <span className="text-xs text-slate-500">Showing top {Math.min(filteredItems.length, 50)} items</span>
+                        </div>
+
+                        <div className="space-y-3">
+                          {filteredItems.slice(0, 50).map((item, i) => (
+                            <div key={i} className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
+                              <div className="flex items-center gap-2 flex-wrap mb-2">
+                                <span className="text-xs bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">Play Store</span>
+                                {item.rating && (
+                                  <span className={`text-xs px-1.5 py-0.5 rounded ${item.rating <= 2 ? "bg-red-900/40 text-red-400" : "bg-slate-700 text-slate-400"}`}>
+                                    {"★".repeat(item.rating)}
+                                  </span>
+                                )}
+                                {item.themes?.map((t) => (
+                                  <span key={t} className="text-xs bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-900">
+                                    {CATEGORY_MAP[t]?.label || THEME_LABELS[t] || t}
+                                  </span>
+                                ))}
+                                {item.sentiment && (
+                                  <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                    item.sentiment === "negative" ? "text-red-400" :
+                                    item.sentiment === "positive" ? "text-emerald-400" : "text-slate-400"
+                                  }`}>{item.sentiment}</span>
+                                )}
+                              </div>
+                              <p className="text-sm text-slate-200 italic">"{item.keyQuote || item.text.slice(0, 150)}"</p>
+                              {item.hypothesesSupported && item.hypothesesSupported.length > 0 && (
+                                <p className="text-xs text-slate-500 mt-1">
+                                  Links to Insight: {item.hypothesesSupported.join(", ")}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {scrapeResult.reddit.length > 0 && (
                   <div>
