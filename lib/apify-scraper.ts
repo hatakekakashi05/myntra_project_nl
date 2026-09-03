@@ -20,18 +20,13 @@ export interface ScrapedReview {
   subreddit?: string;
 }
 
-const WISHLIST_KEYWORDS = [
-  "wishlist", "wish list", "saved", "save for later", "heart", "liked",
-  "waiting for sale", "price drop", "discount", "size", "fit", "quality",
-  "didn't buy", "not buying", "didn't purchase", "never bought",
-  "price went up", "out of stock", "unavailable", "EORS", "end of reason",
-  "comparing", "flipkart", "ajio", "amazon", "forgot", "overload",
-  "too expensive", "can't afford", "reviews", "material", "return", "price", "expensive"
-];
-
-function isRelevant(text: string): boolean {
-  const lower = text.toLowerCase();
-  return WISHLIST_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()));
+export interface ClassifiedReview extends ScrapedReview {
+  themes: string[];
+  evidenceClass: string;
+  hypothesesSupported: string[];
+  wishlistRelevance: "direct" | "indirect" | "none";
+  sentiment: "positive" | "negative" | "neutral";
+  keyQuote: string;
 }
 
 // --- PLAY STORE SCRAPER USING NEATRAT ACTOR ---
@@ -41,7 +36,7 @@ export async function scrapePlayStoreReviews(): Promise<ScrapedReview[]> {
   
   const run = await client.actor("neatrat/google-play-store-reviews-scraper").call({
     appIdOrUrl: "com.myntra.android",
-    maxReviews: 20,
+    maxReviews: 25,
     language: ["en"],
     country: "in",
   });
@@ -52,9 +47,8 @@ export async function scrapePlayStoreReviews(): Promise<ScrapedReview[]> {
 
   const reviews: ScrapedReview[] = [];
   for (const item of items) {
-    const body = (item.body as string) || (item.text as string) || "";
-    if (body.length > 10) {
-      // If it matches keyword OR if we need sample reviews
+    const body = (item.body as string) || (item.text as string) || (item.content as string) || "";
+    if (body.length > 5) {
       reviews.push({
         source: "play_store",
         date: (item.date as string) || new Date().toISOString(),
@@ -69,96 +63,108 @@ export async function scrapePlayStoreReviews(): Promise<ScrapedReview[]> {
   return reviews;
 }
 
-export interface ClassifiedReview extends ScrapedReview {
-  themes: string[];
-  evidenceClass: string;
-  hypothesesSupported: string[];
-  wishlistRelevance: "direct" | "indirect" | "none";
-  sentiment: "positive" | "negative" | "neutral";
-  keyQuote: string;
-}
-
 export async function classifyReviewsWithGemini(
   reviews: ScrapedReview[]
 ): Promise<ClassifiedReview[]> {
   const geminiKey = process.env.GEMINI_API_KEY;
+
+  // If no Gemini key or reviews empty, return with clean default heuristic classification immediately
   if (!geminiKey || reviews.length === 0) {
-    // Return with default classification if no Gemini key
-    return reviews.map(r => ({
-      ...r,
-      themes: ["PRICE", "SALE"],
-      evidenceClass: "USER-REPORTED EVIDENCE",
-      hypothesesSupported: ["H1", "H2"],
-      wishlistRelevance: "direct",
-      sentiment: (r.rating && r.rating <= 2) ? "negative" : "neutral",
-      keyQuote: r.text.slice(0, 120),
-    }));
+    return fallbackClassify(reviews);
   }
 
-  const genAI = new GoogleGenerativeAI(geminiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
+  try {
+    const genAI = new GoogleGenerativeAI(geminiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
 
-  const classified: ClassifiedReview[] = [];
-  const batchSize = 5;
-
-  for (let i = 0; i < reviews.length; i += batchSize) {
-    const batch = reviews.slice(i, i + batchSize);
+    // Process all reviews in a single prompt for speed and zero timeout
     const prompt = `
 You are analyzing user feedback on fashion shopping for Myntra.
 Classify each review for research on Wishlist-to-Purchase conversion.
 
 For each item below, produce a JSON object with:
-- "index": index number (0 to ${batch.length - 1})
+- "index": index number (0 to ${reviews.length - 1})
 - "themes": array from [SALE, PRICE, FIT, SIZE, QUALITY, ALT, OCCASION, INTENT, FORGET, OVERLOAD, INFO, AVAIL, TRUST, SOCIAL, OTHER]
 - "evidenceClass": "USER-REPORTED EVIDENCE"
 - "hypothesesSupported": array from [H1, H2, H3, H4, H5, H6, H7, H8, H9, H10, H11, H12, H13]
-- "wishlistRelevance": "direct" or "indirect"
+- "wishlistRelevance": "direct" if review mentions saving, price change, wishlist, or cart delay; else "indirect"
 - "sentiment": "positive", "negative", or "neutral"
 - "keyQuote": 1 concise sentence summarizing the main shopper blocker in their own words
 
 Reviews:
-${batch.map((r, idx) => `[${idx}] "${r.text}"`).join("\n\n")}
+${reviews.map((r, idx) => `[${idx}] "${r.text}"`).join("\n\n")}
 
 Respond ONLY with valid JSON array of objects.`;
 
-    try {
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      const match = text.match(/\[[\s\S]*\]/);
-      if (match) {
-        const parsed = JSON.parse(match[0]);
-        for (const item of parsed) {
-          if (batch[item.index]) {
-            classified.push({
-              ...batch[item.index],
-              themes: item.themes || ["PRICE"],
-              evidenceClass: item.evidenceClass || "USER-REPORTED EVIDENCE",
-              hypothesesSupported: item.hypothesesSupported || ["H1"],
-              wishlistRelevance: item.wishlistRelevance || "direct",
-              sentiment: item.sentiment || "neutral",
-              keyQuote: item.keyQuote || batch[item.index].text.slice(0, 100),
-            });
-          }
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    const match = text.match(/\[[\s\S]*\]/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      const classified: ClassifiedReview[] = [];
+      for (const item of parsed) {
+        if (reviews[item.index]) {
+          classified.push({
+            ...reviews[item.index],
+            themes: item.themes || ["PRICE"],
+            evidenceClass: item.evidenceClass || "USER-REPORTED EVIDENCE",
+            hypothesesSupported: item.hypothesesSupported || ["H1", "H2"],
+            wishlistRelevance: item.wishlistRelevance || "indirect",
+            sentiment: item.sentiment || "neutral",
+            keyQuote: item.keyQuote || reviews[item.index].text.slice(0, 100),
+          });
         }
       }
-    } catch (err: any) {
-      console.error("Batch classification error:", err.message);
-      // Fallback on batch error
-      for (const b of batch) {
-        classified.push({
-          ...b,
-          themes: ["PRICE", "SALE"],
-          evidenceClass: "USER-REPORTED EVIDENCE",
-          hypothesesSupported: ["H1", "H2"],
-          wishlistRelevance: "direct",
-          sentiment: "neutral",
-          keyQuote: b.text.slice(0, 100),
-        });
-      }
+      if (classified.length > 0) return classified;
     }
+  } catch (err: any) {
+    console.error("Gemini classification failed, using heuristic fallback:", err.message);
   }
 
-  return classified;
+  return fallbackClassify(reviews);
+}
+
+function fallbackClassify(reviews: ScrapedReview[]): ClassifiedReview[] {
+  return reviews.map((r) => {
+    const textLower = r.text.toLowerCase();
+    const themes: string[] = [];
+    const hypotheses: string[] = [];
+
+    if (textLower.includes("price") || textLower.includes("expensive") || textLower.includes("cost")) {
+      themes.push("PRICE");
+      hypotheses.push("H2");
+    }
+    if (textLower.includes("sale") || textLower.includes("discount") || textLower.includes("offer")) {
+      themes.push("SALE");
+      hypotheses.push("H1");
+    }
+    if (textLower.includes("size") || textLower.includes("fit")) {
+      themes.push("FIT", "SIZE");
+      hypotheses.push("H3");
+    }
+    if (textLower.includes("quality") || textLower.includes("cloth") || textLower.includes("material")) {
+      themes.push("QUALITY");
+      hypotheses.push("H4");
+    }
+    if (textLower.includes("stock") || textLower.includes("unavailable")) {
+      themes.push("AVAIL");
+      hypotheses.push("H9");
+    }
+    if (themes.length === 0) {
+      themes.push("PRICE", "INFO");
+      hypotheses.push("H11");
+    }
+
+    return {
+      ...r,
+      themes,
+      evidenceClass: "USER-REPORTED EVIDENCE",
+      hypothesesSupported: hypotheses,
+      wishlistRelevance: (textLower.includes("wishlist") || textLower.includes("saved") || textLower.includes("later")) ? "direct" : "indirect",
+      sentiment: (r.rating && r.rating <= 2) ? "negative" : "neutral",
+      keyQuote: r.text.slice(0, 120),
+    };
+  });
 }
 
 export async function runFullScrape() {
