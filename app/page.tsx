@@ -662,6 +662,22 @@ export default function DiscoveryEngine() {
                     </div>
                   </div>
                 )}
+
+                {scrapeResult.playStore.length === 0 && (
+                  <div className="bg-slate-800/40 border border-slate-700/60 rounded-xl p-8 text-center">
+                    <p className="text-slate-300 font-medium mb-1">No items extracted in this run</p>
+                    <p className="text-xs text-slate-400 mb-4">
+                      The Apify scraper may have reached a temporary rate limit or reviews did not contain filter keywords.
+                    </p>
+                    <button
+                      onClick={runScrape}
+                      disabled={scrapeLoading}
+                      className="bg-violet-700 hover:bg-violet-600 disabled:bg-violet-900 text-white text-xs font-semibold px-4 py-2 rounded-lg"
+                    >
+                      {scrapeLoading ? "Retrying..." : "↺ Try Scraping Again"}
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>
