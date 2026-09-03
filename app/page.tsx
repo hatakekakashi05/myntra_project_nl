@@ -594,11 +594,14 @@ export default function DiscoveryEngine() {
 
                 {scrapeResult.playStore.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">
-                      Play Store Reviews ({scrapeResult.playStore.length} relevant)
-                    </h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
+                        Play Store Live Reviews ({scrapeResult.playStore.length} extracted & classified)
+                      </h3>
+                      <span className="text-xs text-slate-500">Showing top 50 recent shopper reviews</span>
+                    </div>
                     <div className="space-y-3">
-                      {scrapeResult.playStore.slice(0, 20).map((item, i) => (
+                      {scrapeResult.playStore.slice(0, 50).map((item, i) => (
                         <div key={i} className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
                           <div className="flex items-center gap-2 flex-wrap mb-2">
                             <span className="text-xs bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">T4</span>
