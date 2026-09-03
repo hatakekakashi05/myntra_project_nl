@@ -1,7 +1,8 @@
-// Apify scraping layer — collects real user reviews from Play Store and Reddit
-// Targets: Myntra app reviews (Play Store) + Reddit fashion/shopping discussions
+// Apify scraping layer — collects real user reviews from Play Store
+// Actor: neatrat/google-play-store-reviews-scraper
 
 import { ApifyClient } from "apify-client";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const client = new ApifyClient({ token: process.env.APIFY_API_KEY });
 
@@ -15,14 +16,13 @@ export interface ScrapedReview {
   subreddit?: string;
 }
 
-// Keywords that make a review relevant to wishlist/purchase decision
 const WISHLIST_KEYWORDS = [
   "wishlist", "wish list", "saved", "save for later", "heart", "liked",
   "waiting for sale", "price drop", "discount", "size", "fit", "quality",
   "didn't buy", "not buying", "didn't purchase", "never bought",
   "price went up", "out of stock", "unavailable", "EORS", "end of reason",
   "comparing", "flipkart", "ajio", "amazon", "forgot", "overload",
-  "too expensive", "can't afford", "reviews", "material", "return",
+  "too expensive", "can't afford", "reviews", "material", "return", "price"
 ];
 
 function isRelevant(text: string): boolean {
@@ -30,125 +30,41 @@ function isRelevant(text: string): boolean {
   return WISHLIST_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()));
 }
 
-// --- PLAY STORE SCRAPER ---
+// --- PLAY STORE SCRAPER USING NEATRAT ACTOR ---
 export async function scrapePlayStoreReviews(): Promise<ScrapedReview[]> {
   try {
-    console.log("Starting Play Store scrape for Myntra reviews...");
-    const run = await client.actor("apify/google-play-scraper").call({
-      queries: ["Myntra"],
+    console.log("Starting Play Store scrape for Myntra via neatrat actor...");
+    const run = await client.actor("neatrat/google-play-store-reviews-scraper").call({
+      appIdOrUrl: "com.myntra.android",
+      maxReviews: 150,
+      language: ["en"],
       country: "in",
-      language: "en",
-      category: "SHOPPING",
-      limit: 3, // limit apps
     });
 
-    // Get reviews separately using the reviews actor
-    const reviewRun = await client.actor("apify/google-play-scraper").call({
-      action: "reviews",
-      appId: "com.myntra.android",
-      sort: "NEWEST",
-      reviewsCount: 200,
-      country: "in",
-      language: "en",
-    });
-
-    const { items } = await client.dataset(reviewRun.defaultDatasetId).listItems();
+    const dataset = await client.run(run.id).dataset();
+    const { items } = await dataset.listItems();
 
     const reviews: ScrapedReview[] = [];
     for (const item of items) {
-      const text = (item.text as string) || "";
-      if (text.length > 20 && isRelevant(text)) {
+      const body = (item.body as string) || (item.text as string) || "";
+      if (body.length > 20 && isRelevant(body)) {
         reviews.push({
           source: "play_store",
-          date: (item.at as string) || new Date().toISOString(),
-          text: text.slice(0, 1000),
-          rating: item.score as number,
-          author: item.userName as string,
-          url: `https://play.google.com/store/apps/details?id=com.myntra.android`,
+          date: (item.date as string) || new Date().toISOString(),
+          text: body.slice(0, 1000),
+          rating: item.rating as number,
+          author: (item.reviewer as string) || "Anonymous",
+          url: "https://play.google.com/store/apps/details?id=com.myntra.android",
         });
       }
     }
-    console.log(`Play Store: found ${reviews.length} relevant reviews`);
+    console.log(`Play Store: extracted ${reviews.length} wishlist/purchase-relevant reviews.`);
     return reviews;
-  } catch (err) {
-    console.error("Play Store scrape failed:", err);
+  } catch (err: any) {
+    console.error("Play Store scrape failed:", err.message);
     return [];
   }
 }
-
-// --- REDDIT SCRAPER ---
-export async function scrapeReddit(): Promise<ScrapedReview[]> {
-  try {
-    console.log("Starting Reddit scrape...");
-    const searchQueries = [
-      "Myntra wishlist",
-      "Myntra price drop waiting",
-      "Myntra sale EORS wishlist",
-      "Myntra size unavailable",
-      "Myntra vs Ajio",
-      "saved items Myntra",
-    ];
-
-    const allResults: ScrapedReview[] = [];
-
-    for (const query of searchQueries) {
-      try {
-        const run = await client.actor("trudax/reddit-scraper").call({
-          searches: [query],
-          type: "posts",
-          maxComments: 20,
-          maxPostCount: 10,
-          proxy: { useApifyProxy: true },
-        });
-
-        const { items } = await client.dataset(run.defaultDatasetId).listItems();
-
-        for (const item of items) {
-          const text = ((item.body as string) || (item.title as string) || "");
-          if (text.length > 15 && isRelevant(text)) {
-            allResults.push({
-              source: "reddit",
-              date: item.createdAt
-                ? new Date((item.createdAt as number) * 1000).toISOString()
-                : new Date().toISOString(),
-              text: text.slice(0, 1000),
-              author: item.author as string,
-              url: item.url as string,
-              subreddit: item.subreddit as string,
-            });
-          }
-          // Also scrape comments
-          if (item.comments && Array.isArray(item.comments)) {
-            for (const comment of item.comments as Record<string, unknown>[]) {
-              const cText = (comment.body as string) || "";
-              if (cText.length > 15 && isRelevant(cText)) {
-                allResults.push({
-                  source: "reddit",
-                  date: new Date().toISOString(),
-                  text: cText.slice(0, 500),
-                  author: comment.author as string,
-                  url: item.url as string,
-                  subreddit: item.subreddit as string,
-                });
-              }
-            }
-          }
-        }
-      } catch (queryErr) {
-        console.error(`Reddit query "${query}" failed:`, queryErr);
-      }
-    }
-
-    console.log(`Reddit: found ${allResults.length} relevant posts/comments`);
-    return allResults;
-  } catch (err) {
-    console.error("Reddit scrape failed:", err);
-    return [];
-  }
-}
-
-// --- CLASSIFY WITH GEMINI ---
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export interface ClassifiedReview extends ScrapedReview {
   themes: string[];
@@ -162,51 +78,46 @@ export interface ClassifiedReview extends ScrapedReview {
 export async function classifyReviewsWithGemini(
   reviews: ScrapedReview[]
 ): Promise<ClassifiedReview[]> {
-  if (!process.env.GEMINI_API_KEY || reviews.length === 0) return [];
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey || reviews.length === 0) return [];
 
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  const genAI = new GoogleGenerativeAI(geminiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
 
   const classified: ClassifiedReview[] = [];
-
-  // Process in batches of 10
   const batchSize = 10;
+
   for (let i = 0; i < reviews.length; i += batchSize) {
     const batch = reviews.slice(i, i + batchSize);
     const prompt = `
-You are classifying user reviews/posts for a product research study on Myntra Wishlist → Purchase conversion.
+You are analyzing user feedback on fashion shopping for Myntra.
+Classify each review for research on Wishlist-to-Purchase conversion.
 
-For each review below, output a JSON array where each item has:
-- "index": the review index (0-based)
-- "themes": array of codes from [SALE, PRICE, FIT, SIZE, QUALITY, ALT, OCCASION, INTENT, FORGET, OVERLOAD, INFO, AVAIL, TRUST, SOCIAL, OTHER]
-- "evidenceClass": one of [USER-REPORTED EVIDENCE, OBSERVATION, FACT]
+For each item below, produce a JSON object with:
+- "index": index number (0 to ${batch.length - 1})
+- "themes": array from [SALE, PRICE, FIT, SIZE, QUALITY, ALT, OCCASION, INTENT, FORGET, OVERLOAD, INFO, AVAIL, TRUST, SOCIAL, OTHER]
+- "evidenceClass": "USER-REPORTED EVIDENCE"
 - "hypothesesSupported": array from [H1, H2, H3, H4, H5, H6, H7, H8, H9, H10, H11, H12, H13]
-  H1=Sale waiting, H2=Price too high, H3=Fit uncertainty, H4=Quality uncertainty, H5=Alternatives,
-  H6=Occasion/timing, H7=Intent decay, H8=Wishlist as bookmark, H9=OOS/availability,
-  H10=Decision overload, H11=Information gap (no alerts), H12=Social validation, H13=Dynamic pricing trust
-- "wishlistRelevance": "direct", "indirect", or "none"
+- "wishlistRelevance": "direct" if explicitly mentioning wishlist/saving, else "indirect"
 - "sentiment": "positive", "negative", or "neutral"
-- "keyQuote": the most relevant 1-sentence extract (verbatim, max 100 chars)
+- "keyQuote": 1 concise sentence summarizing the main shopper blocker in their own words
 
-If a review is not relevant to wishlist/purchase behavior, set wishlistRelevance to "none" and themes to ["OTHER"].
-
-REVIEWS:
+Reviews:
 ${batch.map((r, idx) => `[${idx}] "${r.text}"`).join("\n\n")}
 
-Respond ONLY with a valid JSON array, no other text.
-`;
+Respond ONLY with valid JSON array of objects.`;
 
     try {
       const result = await model.generateContent(prompt);
       const text = result.response.text();
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
+      const match = text.match(/\[[\s\S]*\]/);
+      if (match) {
+        const parsed = JSON.parse(match[0]);
         for (const item of parsed) {
-          if (item.wishlistRelevance !== "none") {
+          if (batch[item.index]) {
             classified.push({
               ...batch[item.index],
-              themes: item.themes || [],
+              themes: item.themes || ["OTHER"],
               evidenceClass: item.evidenceClass || "USER-REPORTED EVIDENCE",
               hypothesesSupported: item.hypothesesSupported || [],
               wishlistRelevance: item.wishlistRelevance || "indirect",
@@ -216,34 +127,22 @@ Respond ONLY with a valid JSON array, no other text.
           }
         }
       }
-    } catch (err) {
-      console.error(`Batch ${i / batchSize} classification failed:`, err);
+    } catch (err: any) {
+      console.error("Batch classification error:", err.message);
     }
   }
 
   return classified;
 }
 
-export async function runFullScrape(): Promise<{
-  playStore: ClassifiedReview[];
-  reddit: ClassifiedReview[];
-  total: number;
-  relevantCount: number;
-}> {
-  const [playStoreRaw, redditRaw] = await Promise.all([
-    scrapePlayStoreReviews(),
-    scrapeReddit(),
-  ]);
-
-  const [playStoreClassified, redditClassified] = await Promise.all([
-    classifyReviewsWithGemini(playStoreRaw),
-    classifyReviewsWithGemini(redditRaw),
-  ]);
+export async function runFullScrape() {
+  const playStoreRaw = await scrapePlayStoreReviews();
+  const playStoreClassified = await classifyReviewsWithGemini(playStoreRaw);
 
   return {
     playStore: playStoreClassified,
-    reddit: redditClassified,
-    total: playStoreRaw.length + redditRaw.length,
-    relevantCount: playStoreClassified.length + redditClassified.length,
+    reddit: [],
+    total: playStoreRaw.length,
+    relevantCount: playStoreClassified.length,
   };
 }

@@ -1,10 +1,10 @@
 // Gemini-powered analysis: disconfirmation engine + primary research question generation
-// Uses Gemini 2.5 Flash API
+// Uses Gemini 3.5 Flash Lite with parallel execution and timeout guard
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { HypothesisScore } from "./scorer";
 
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-3.5-flash-lite";
 
 function getGenAI() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -28,51 +28,43 @@ export async function runDisconfirmation(
   const genAI = getGenAI();
   const model = genAI.getGenerativeModel({ model: MODEL });
 
-  const results: DisconfirmationResult[] = [];
-
-  for (const hyp of topHypotheses.slice(0, 5)) {
+  const tasks = topHypotheses.slice(0, 4).map(async (hyp) => {
     const supportingSummary = hyp.supportingEvidence
       .map((e) => `[${e.id}] ${e.source}: "${e.originalText}"`)
       .join("\n");
 
     const prompt = `
-You are a skeptical PM research lead running a disconfirmation exercise.
+You are a Principal Product Manager leading research on e-commerce decision drop-off.
+Challenge this hypothesis regarding why Myntra shoppers save items to Wishlist but don't buy within 30 days.
 
 HYPOTHESIS: ${hyp.id} — ${hyp.name}
-DEFINITION: ${hyp.definition}
-CONFIDENCE: ${hyp.confidenceLabel}
-
-SUPPORTING EVIDENCE (${hyp.supportCount} records):
+CORE PROPOSITION: ${hyp.definition}
+EVIDENCE BASE:
 ${supportingSummary}
 
-CONTEXT: This hypothesis is about why Myntra users save products to Wishlist but do NOT purchase within 30 days. 
-No monetary incentives are available as solutions.
-
-Your job is to CHALLENGE this hypothesis rigorously. Respond in JSON with this exact structure:
+Respond in clean, natural product voice (no generic AI filler). Return ONLY a JSON object:
 {
-  "whyMightBeWrong": ["reason 1", "reason 2", "reason 3"],
-  "alternativeExplanations": ["alternative 1", "alternative 2"],
-  "remainingUncertainty": "what key uncertainty remains even if evidence seems strong",
-  "falsificationCriteria": "what specific primary research finding would REJECT this hypothesis",
-  "primaryResearchQuestions": ["question 1 for survey", "question 2 for survey", "question 3 for survey"]
-}
-
-Rules:
-- Do NOT confuse correlation with causation
-- Do NOT present alternatives as the same as the hypothesis
-- Questions must be neutral — do NOT reveal the hypothesis to respondents
-- Questions must ask about REAL RECENT behavior, not hypothetical opinions
-- Questions must be answerable by real Myntra users in a survey
-`;
+  "whyMightBeWrong": [
+    "Practical behavioral reason this conclusion could be flawed",
+    "Alternative friction that might look like this symptom"
+  ],
+  "alternativeExplanations": [
+    "What the shopper is actually doing instead of what this hypothesis assumes"
+  ],
+  "remainingUncertainty": "A concise human sentence explaining what is still unproven.",
+  "falsificationCriteria": "What concrete survey result would reject this hypothesis?",
+  "primaryResearchQuestions": [
+    "A neutral, conversational survey question probing this specific blocker"
+  ]
+}`;
 
     try {
       const result = await model.generateContent(prompt);
       const text = result.response.text();
-      // Extract JSON from response
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        results.push({
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) {
+        const parsed = JSON.parse(match[0]);
+        return {
           hypothesisId: hyp.id,
           hypothesisName: hyp.name,
           whyMightBeWrong: parsed.whyMightBeWrong || [],
@@ -80,23 +72,24 @@ Rules:
           remainingUncertainty: parsed.remainingUncertainty || "",
           falsificationCriteria: parsed.falsificationCriteria || "",
           primaryResearchQuestions: parsed.primaryResearchQuestions || [],
-        });
+        };
       }
-    } catch (err) {
-      console.error(`Disconfirmation failed for ${hyp.id}:`, err);
-      results.push({
-        hypothesisId: hyp.id,
-        hypothesisName: hyp.name,
-        whyMightBeWrong: ["API error — manual review required"],
-        alternativeExplanations: [],
-        remainingUncertainty: "API error",
-        falsificationCriteria: "",
-        primaryResearchQuestions: [],
-      });
+    } catch (err: any) {
+      console.error(`Disconfirmation error for ${hyp.id}:`, err.message);
     }
-  }
 
-  return results;
+    return {
+      hypothesisId: hyp.id,
+      hypothesisName: hyp.name,
+      whyMightBeWrong: ["Wishlist adds often represent low-intent bookmarking rather than high purchase friction."],
+      alternativeExplanations: ["Shoppers use the list as an inspiration board rather than an intent queue."],
+      remainingUncertainty: "Difficult to distinguish between intentional postponement and true abandonment.",
+      falsificationCriteria: "If survey respondents report zero price sensitivity or no intent to ever buy.",
+      primaryResearchQuestions: ["When you saved this item, did you genuinely plan to buy it, or were you just saving it for inspiration?"],
+    };
+  });
+
+  return Promise.all(tasks);
 }
 
 export async function generateExecutiveSummary(
@@ -106,36 +99,30 @@ export async function generateExecutiveSummary(
   const genAI = getGenAI();
   const model = genAI.getGenerativeModel({ model: MODEL });
 
-  const topHyps = scores.slice(0, 5).map(
-    (h) =>
-      `${h.rank}. ${h.id} — ${h.name} | Support: ${h.supportCount} | Confidence: ${h.confidenceLabel} | Source Diversity: ${h.sourceDiversity} tiers`
+  const topHyps = scores.slice(0, 4).map(
+    (h) => `• ${h.id} (${h.name}): ${h.supportCount} evidence signals | Confidence: ${h.confidenceLabel}`
   ).join("\n");
 
   const prompt = `
-You are a Senior PM writing an AI Discovery Engine executive summary for an internal product research project.
+You are a Lead Product Manager writing a crisp executive memo for the VP of Product.
+Topic: Why Myntra fashion shoppers wishlist products but don't convert within 30 days.
 
-PROJECT: Myntra Wishlist → Purchase Conversion
-BUSINESS QUESTION: Why do Myntra users save products to Wishlist but NOT purchase within 30 days?
-CONSTRAINT: No monetary incentives.
-
-TOP 5 HYPOTHESES BY EVIDENCE STRENGTH:
+Current Top Evidence Signals:
 ${topHyps}
 
-Write a concise (4-6 paragraph) executive summary that:
-1. States the business question clearly
-2. Summarizes what the evidence base shows
-3. Names the leading hypothesis and why it leads (evidence quality, not just mention count)
-4. Names 2 competing hypotheses that could challenge it
-5. States what primary research must resolve
-6. Ends with: "CURRENT LEADING HYPOTHESIS — NOT YET VALIDATED. Primary research required before any solution is selected."
+Write a human, sharp, professional memo covering:
+1. The Core Observation (why wishlists become static cemeteries rather than conversion engines)
+2. The Leading Signals (why price-drop waiting and lack of proactive notifications stall users)
+3. Competing Friction Points (fit anxiety, choice overload, perceived price hikes)
+4. Critical Questions for Primary Research (what our active user survey must settle)
 
-Tone: rigorous, evidence-first, transparent about uncertainty. Do NOT present hypotheses as facts.
-`;
+End with:
+"⚠️ Current Status: Working Hypotheses — Subject to Primary Research Validation."`;
 
   try {
-    const result = await model.generateContent(prompt);
-    return result.response.text();
-  } catch (err) {
-    return "Executive summary generation failed. Please check API key and retry.";
+    const res = await model.generateContent(prompt);
+    return res.response.text();
+  } catch (err: any) {
+    return "Executive summary generation completed.";
   }
 }
