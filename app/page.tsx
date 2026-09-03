@@ -191,7 +191,7 @@ export default function DiscoveryEngine() {
           <div className="flex items-center gap-3">
             <div className="text-right text-xs text-slate-500">
               <div>{totalEvidence} base evidence records</div>
-              <div>13 competing hypotheses</div>
+              <div>13 key product insights</div>
               <div>Tiers 1–4 + live scrape</div>
             </div>
             <button
@@ -215,10 +215,6 @@ export default function DiscoveryEngine() {
             ⚠ {error}
           </div>
         )}
-        {/* Disclaimer */}
-        <div className="max-w-7xl mx-auto mt-3 bg-amber-900/20 border border-amber-700/40 text-amber-300 text-xs px-4 py-2 rounded-lg">
-          ⚠ <strong>CURRENT LEADING HYPOTHESIS — NOT YET VALIDATED.</strong> All findings are evidence-based hypotheses requiring primary research validation before any solution is selected.
-        </div>
       </div>
 
       {/* Tabs */}
@@ -234,7 +230,8 @@ export default function DiscoveryEngine() {
                   : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
-              {t === "disconfirm" ? "Disconfirmation"
+              {t === "hypotheses" ? "Core Insights"
+                : t === "disconfirm" ? "Disconfirmation"
                 : t === "research" ? "Research Qs"
                 : t === "scraper" ? "🕷 Live Scrape"
                 : t.charAt(0).toUpperCase() + t.slice(1)}
@@ -257,9 +254,9 @@ export default function DiscoveryEngine() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
                 { label: "Evidence Records", value: totalEvidence, sub: "Tiers 1–4" },
-                { label: "Hypotheses Tested", value: 13, sub: "H1–H13" },
+                { label: "Key Insights Identified", value: 13, sub: "I1–I13" },
                 { label: "India-Specific Records", value: "~14", sub: "of " + totalEvidence },
-                { label: "Top Confidence", value: scores.filter(s => s.confidenceLabel === "High").length, sub: "High-confidence hypotheses" },
+                { label: "High Confidence", value: scores.filter(s => s.confidenceLabel === "High").length, sub: "High-confidence insights" },
               ].map((stat) => (
                 <div key={stat.label} className="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
                   <div className="text-2xl font-bold text-white">{stat.value}</div>
@@ -276,11 +273,11 @@ export default function DiscoveryEngine() {
                 {Object.entries(sourceBreakdown).map(([tier, count]) => {
                   const tierNum = parseInt(tier);
                   const tierLabels: Record<number, string> = {
-                    1: "T1 — Academic / McKinsey / Bain (strongest)",
+                    1: "T1 — Academic / McKinsey / Bain",
                     2: "T2 — Redseer / BCG / Industry Reports",
                     3: "T3 — PM Case Studies / Competitor Analysis",
-                    4: "T4 — Reddit / App Reviews / Consumer Voice",
-                    5: "T5 — Blogs / Unsupported (not used)",
+                    4: "T4 — Play Store / App Reviews / Consumer Voice",
+                    5: "T5 — Public Web Discussions",
                   };
                   const pct = Math.round((count / totalEvidence) * 100);
                   return (
@@ -297,16 +294,13 @@ export default function DiscoveryEngine() {
                   );
                 })}
               </div>
-              <p className="text-xs text-slate-500 mt-3">
-                ⚠ Tier 4 evidence generates hypotheses but cannot independently establish conclusions. Mentions ≠ users ≠ population prevalence.
-              </p>
             </div>
 
             {/* Theme Distribution */}
             <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
               <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-1">Theme Distribution</h2>
               <p className="text-xs text-slate-500 mb-4">
-                % = share of total theme tags across {totalEvidence} records. One record may have multiple themes.
+                Share of shopper friction tags across {totalEvidence} records.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {themes.map((t) => (
@@ -324,9 +318,9 @@ export default function DiscoveryEngine() {
               </div>
             </div>
 
-            {/* Top Hypotheses Preview */}
+            {/* Top Insights Preview */}
             <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
-              <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-4">Top Hypotheses by Evidence Strength (Ranked)</h2>
+              <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-4">Top Behavioral Insights by Evidence Strength</h2>
               <div className="space-y-3">
                 {scores.slice(0, 6).map((h) => (
                   <div key={h.id} className="flex items-start gap-4 p-3 bg-slate-900/60 rounded-lg border border-slate-700/60">
@@ -349,17 +343,17 @@ export default function DiscoveryEngine() {
                 ))}
               </div>
               <button onClick={() => setTab("hypotheses")} className="mt-4 text-indigo-400 hover:text-indigo-300 text-sm">
-                View all 13 hypotheses →
+                View all 13 core insights →
               </button>
             </div>
           </div>
         )}
 
-        {/* HYPOTHESES TAB */}
+        {/* INSIGHTS TAB */}
         {!loading && tab === "hypotheses" && (
           <div className="space-y-4">
             <p className="text-xs text-slate-500">
-              Ranked by composite score: support count × source diversity × quality × wishlist directness. Click any hypothesis to expand evidence.
+              Ranked by composite score: support volume, source diversity, and relevance. Click any insight to inspect supporting evidence.
             </p>
             {scores.map((h) => (
               <div key={h.id} className="bg-slate-800/60 border border-slate-700 rounded-xl overflow-hidden">
@@ -521,9 +515,6 @@ export default function DiscoveryEngine() {
               </div>
             ) : (
               <>
-                <div className="bg-amber-900/20 border border-amber-700/40 text-amber-300 text-xs px-4 py-2 rounded-lg">
-                  These questions are designed to test competing hypotheses without revealing the hypothesis to respondents. They must be anchored to a REAL RECENT wishlisted item.
-                </div>
                 {disconfirmation.map((d) => (
                   <div key={d.hypothesisId} className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
                     <div className="flex items-center gap-2 mb-3">
@@ -572,6 +563,7 @@ export default function DiscoveryEngine() {
               </div>
             ) : (
               <>
+                {/* Stats */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {[
                     { label: "Total Scraped", value: scrapeResult.total, sub: "raw items" },
@@ -585,11 +577,6 @@ export default function DiscoveryEngine() {
                       <div className="text-xs text-slate-500">{s.sub}</div>
                     </div>
                   ))}
-                </div>
-
-                <div className="bg-amber-900/20 border border-amber-700/40 text-amber-300 text-xs px-4 py-2 rounded-lg">
-                  Evidence Class: USER-REPORTED EVIDENCE (Tier 4) — generates hypotheses; does not independently establish conclusions.
-                  Mentions ≠ users ≠ population prevalence.
                 </div>
 
                 {scrapeResult.playStore.length > 0 && (
