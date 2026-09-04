@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect } from "react";
-import PeerFitPrototype from "./components/PeerFitPrototype";
 
 interface ScrapedItem {
   source: string;
@@ -95,7 +94,7 @@ const THEME_LABELS: Record<string, string> = {
 };
 
 export default function DiscoveryEngine() {
-  const [tab, setTab] = useState<"overview" | "peerfit" | "hypotheses" | "disconfirm" | "research" | "scraper">("overview");
+  const [tab, setTab] = useState<"overview" | "hypotheses" | "disconfirm" | "research" | "scraper">("overview");
   const [scores, setScores] = useState<HypothesisScore[]>([]);
   const [themes, setThemes] = useState<ThemeItem[]>([]);
   const [sourceBreakdown, setSourceBreakdown] = useState<Record<string, number>>({});
@@ -221,25 +220,18 @@ export default function DiscoveryEngine() {
 
       {/* Tabs */}
       <div className="border-b border-slate-800 bg-slate-900">
-        <div className="max-w-7xl mx-auto px-6 flex gap-0 overflow-x-auto">
-          {(["overview", "peerfit", "hypotheses", "disconfirm", "research", "scraper"] as const).map((t) => (
+        <div className="max-w-7xl mx-auto px-6 flex gap-0">
+          {(["overview", "hypotheses", "disconfirm", "research", "scraper"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors capitalize flex items-center gap-2 whitespace-nowrap ${
+              className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors capitalize ${
                 tab === t
-                  ? "border-indigo-400 text-indigo-300 bg-slate-800/40"
+                  ? "border-indigo-400 text-indigo-300"
                   : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
-              {t === "peerfit" ? (
-                <>
-                  <span>✨ PeerFit™ MVP</span>
-                  <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded border border-emerald-500/30">
-                    Phase 10
-                  </span>
-                </>
-              ) : t === "hypotheses" ? "Core Insights"
+              {t === "hypotheses" ? "Core Insights"
                 : t === "disconfirm" ? "Disconfirmation"
                 : t === "research" ? "Research Qs"
                 : t === "scraper" ? "🕷 Live Scrape"
@@ -356,11 +348,6 @@ export default function DiscoveryEngine() {
               </button>
             </div>
           </div>
-        )}
-
-        {/* PEERFIT PROTOTYPE TAB (PHASE 10 MVP) */}
-        {!loading && tab === "peerfit" && (
-          <PeerFitPrototype />
         )}
 
         {/* INSIGHTS TAB */}
