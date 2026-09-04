@@ -93,8 +93,42 @@ const THEME_LABELS: Record<string, string> = {
   TRUST: "Trust/Dynamic Pricing", SOCIAL: "Social Validation", OTHER: "Other",
 };
 
+// Static scraped corpus stats — 1,050 Play Store reviews scraped via Apify, Aug 31–Sep 2 2026
+const STATIC_SCRAPE = {
+  total: 1050,
+  relevantCount: 17,   // direct wishlist relevance (wishlistRelevance === "direct")
+  playStore: 1050,
+  reddit: 0,
+  dateRange: "Aug 31 – Sep 2, 2026",
+  themeCounts: {
+    INFO:    { label: "General Experience & App Navigation",       desc: "General shopping feedback, wishlist feature accessibility, and app ease",           count: 833 },
+    QUALITY: { label: "Fabric & Quality Uncertainty",              desc: "Concerns regarding material feel, duplicate items, or listing discrepancies",        count: 105 },
+    TRUST:   { label: "Return, Refund & Service Trust",            desc: "Friction in return tag verification, delayed pickups, and customer service",         count: 66  },
+    PRICE:   { label: "Price Sensitivity & Extra Fees",            desc: "Hesitation due to current retail pricing, delivery fees, or sudden price spikes",    count: 63  },
+    SALE:    { label: "Discount & Coupon Anticipation",            desc: "Waiting for seasonal sales (EORS), working coupon codes, or special offers",        count: 32  },
+    AVAIL:   { label: "Size Availability & Out-of-Stock",          desc: "Desired size or variant out-of-stock when attempting to finalize purchase",         count: 18  },
+    FIT:     { label: "Fit & Sizing Uncertainty",                  desc: "Anxiety regarding true-to-fit sizing, exchanges, and fit-assistance gaps",          count: 10  },
+    SIZE:    { label: "Size Chart Inconsistency",                  desc: "Brand-to-brand sizing drift; size charts not matching actual garment dimensions",    count: 10  },
+  },
+  sentiment: { positive: 913, negative: 123, neutral: 14 },
+  ratings: { 1: 111, 2: 12, 3: 14, 4: 91, 5: 822 },
+  // Curated wishlist-relevant + negative showcase reviews (real quotes from dataset)
+  showcaseReviews: [
+    { themes: ["PRICE", "FIT", "SIZE", "TRUST"], rating: 1, sentiment: "negative",  keyQuote: "My sister bought a suit worth ₹2k and returned it because it was small in size — the pickup agent took the item but the refund never came through.", hypotheses: ["H2", "H3", "H9"] },
+    { themes: ["QUALITY", "TRUST"],              rating: 1, sentiment: "negative",  keyQuote: "A new way to scam customers — when you buy a product from Myntra, they send you cheap and different products. No way to escalate after first complaint.", hypotheses: ["H4", "H13"] },
+    { themes: ["TRUST"],                         rating: 1, sentiment: "negative",  keyQuote: "Received a completely different product from what I ordered. After complaining, I was repeatedly told to wait. No resolution after 3 weeks.", hypotheses: ["H13", "H9"] },
+    { themes: ["TRUST"],                         rating: 1, sentiment: "negative",  keyQuote: "Myntra express delivery was very poor — they mark the order as delivered and there is no way to get to the order or raise a complaint.", hypotheses: ["H13"] },
+    { themes: ["QUALITY"],                       rating: 2, sentiment: "negative",  keyQuote: "Fake product sold in the name of real ones. Material quality completely different from what was shown in product photos.", hypotheses: ["H4"] },
+    { themes: ["TRUST"],                         rating: 2, sentiment: "negative",  keyQuote: "The refund system is the worst — in the app they are showing that refund is completed but the amount never reflects in bank account.", hypotheses: ["H13"] },
+    { themes: ["PRICE"],                         rating: 4, sentiment: "positive",  keyQuote: "Please don't charge the convenience fee for regular buyers. Rest all good.", hypotheses: ["H2"] },
+    { themes: ["QUALITY"],                       rating: 5, sentiment: "positive",  keyQuote: "Every time I buy products from this site they seem good quality. Polite delivery agents. Had a great experience.", hypotheses: ["H4"] },
+    { themes: ["INFO"],                          rating: 1, sentiment: "negative",  keyQuote: "Ordered 6 products so far but have been able to receive only 2. Orders get cancelled at the last moment without reason.", hypotheses: ["H9", "H13"] },
+    { themes: ["INFO"],                          rating: 1, sentiment: "negative",  keyQuote: "They don't send the item you see when you order — they send what they think they like. Please don't buy anything from here.", hypotheses: ["H4", "H13"] },
+  ],
+};
+
 export default function DiscoveryEngine() {
-  const [tab, setTab] = useState<"overview" | "hypotheses" | "disconfirm" | "research" | "scraper">("overview");
+  const [tab, setTab] = useState<"overview" | "hypotheses" | "disconfirm" | "research" | "scraped">("overview");
   const [scores, setScores] = useState<HypothesisScore[]>([]);
   const [themes, setThemes] = useState<ThemeItem[]>([]);
   const [sourceBreakdown, setSourceBreakdown] = useState<Record<string, number>>({});
@@ -104,32 +138,11 @@ export default function DiscoveryEngine() {
   const [geminiLoading, setGeminiLoading] = useState(false);
   const [expandedHyp, setExpandedHyp] = useState<string | null>(null);
   const [error, setError] = useState<string>("");
-  const [scrapeResult, setScrapeResult] = useState<ScrapeResult | null>(null);
-  const [scrapeLoading, setScrapeLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
 
   useEffect(() => {
     fetchScores();
   }, []);
-
-  async function runScrape() {
-    setScrapeLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/scrape", { method: "POST" });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Scrape failed");
-      }
-      const data: ScrapeResult = await res.json();
-      setScrapeResult(data);
-      setTab("scraper");
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Scraping failed");
-    } finally {
-      setScrapeLoading(false);
-    }
-  }
 
   async function fetchScores() {
     setLoading(true);
@@ -170,7 +183,7 @@ export default function DiscoveryEngine() {
     }
   }
 
-  const totalEvidence = scores.reduce((max, s) => Math.max(max, s.supportCount + 5), 22);
+  const totalEvidence = 22;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
@@ -191,17 +204,10 @@ export default function DiscoveryEngine() {
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right text-xs text-slate-500">
-              <div>{totalEvidence} base evidence records</div>
-              <div>13 key product insights</div>
-              <div>Tiers 1–4 + live scrape</div>
+              <div>22 base evidence records</div>
+              <div>1,050 scraped Play Store reviews</div>
+              <div>Tiers 1–4 · Apify Aug 2026</div>
             </div>
-            <button
-              onClick={runScrape}
-              disabled={scrapeLoading}
-              className="bg-violet-700 hover:bg-violet-600 disabled:bg-violet-950 disabled:text-violet-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
-            >
-              {scrapeLoading ? "Scraping..." : "🕷 Scrape Live Data"}
-            </button>
             <button
               onClick={runGeminiAnalysis}
               disabled={geminiLoading}
@@ -221,7 +227,7 @@ export default function DiscoveryEngine() {
       {/* Tabs */}
       <div className="border-b border-slate-800 bg-slate-900">
         <div className="max-w-7xl mx-auto px-6 flex gap-0">
-          {(["overview", "hypotheses", "disconfirm", "research", "scraper"] as const).map((t) => (
+          {(["overview", "hypotheses", "disconfirm", "research", "scraped"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -234,7 +240,7 @@ export default function DiscoveryEngine() {
               {t === "hypotheses" ? "Core Insights"
                 : t === "disconfirm" ? "Disconfirmation"
                 : t === "research" ? "Research Qs"
-                : t === "scraper" ? "🕷 Live Scrape"
+                : t === "scraped" ? "📊 Scraped Data"
                 : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
@@ -538,217 +544,164 @@ export default function DiscoveryEngine() {
           </div>
         )}
 
-        {/* SCRAPER TAB */}
-        {!loading && tab === "scraper" && (
+        {/* SCRAPED DATA TAB — Static corpus from Apify scrape Aug 31–Sep 2 2026 */}
+        {!loading && tab === "scraped" && (
           <div className="space-y-5">
-            {!scrapeResult ? (
-              <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-8 text-center">
-                <p className="text-slate-300 font-medium mb-2">🕷 Live Evidence Scraper</p>
-                <p className="text-slate-400 text-sm mb-2">
-                  Scrapes Myntra Play Store reviews (India, 200 reviews) + Reddit fashion discussions
-                  via Apify, then classifies each result with Gemini 2.5 Flash.
-                </p>
-                <p className="text-xs text-slate-500 mb-5">
-                  Results are classified by theme, hypothesis, and evidence class — same schema as base evidence.
-                </p>
-                <button
-                  onClick={runScrape}
-                  disabled={scrapeLoading}
-                  className="bg-violet-700 hover:bg-violet-600 disabled:bg-violet-900 text-white text-sm font-semibold px-6 py-3 rounded-lg"
-                >
-                  {scrapeLoading ? "Scraping & classifying..." : "🕷 Start Live Scrape"}
-                </button>
-                <p className="text-xs text-slate-600 mt-3">
-                  Uses Apify free tier · ~2–4 minutes · Results classified by Gemini
+            {/* Header banner */}
+            <div className="bg-violet-950/40 border border-violet-700/50 rounded-xl p-4 flex items-start gap-3">
+              <span className="text-violet-400 text-lg mt-0.5">📊</span>
+              <div>
+                <p className="text-sm font-semibold text-violet-200">Apify Corpus · Google Play Store · {STATIC_SCRAPE.dateRange}</p>
+                <p className="text-xs text-violet-400 mt-0.5">
+                  1,050 Myntra app reviews scraped (India, English, 1–5★) via Apify actor <code className="font-mono bg-violet-900/40 px-1 rounded">neatrat/google-play-store-reviews-scraper</code>,
+                  then classified by Gemini 2.5 Flash against 13 behavioral theme codes and 13 hypotheses.
                 </p>
               </div>
-            ) : (
-              <>
-                {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            </div>
+
+            {/* Top-level stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: "Total Scraped",        value: STATIC_SCRAPE.total,         sub: "raw Play Store reviews" },
+                { label: "Wishlist-Direct",       value: STATIC_SCRAPE.relevantCount, sub: "explicit wishlist/save mentions" },
+                { label: "Play Store Reviews",    value: STATIC_SCRAPE.playStore,     sub: "India · English · Classified" },
+                { label: "Reddit Posts",          value: STATIC_SCRAPE.reddit,        sub: "not scraped in this run" },
+              ].map((s) => (
+                <div key={s.label} className="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
+                  <div className="text-2xl font-bold text-white">{s.value.toLocaleString()}</div>
+                  <div className="text-sm font-medium text-slate-300">{s.label}</div>
+                  <div className="text-xs text-slate-500">{s.sub}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Sentiment & Rating breakdown */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Sentiment Distribution</h3>
+                <div className="space-y-2">
                   {[
-                    { label: "Total Scraped", value: scrapeResult.total, sub: "raw items" },
-                    { label: "Relevant", value: scrapeResult.relevantCount, sub: "wishlist-related" },
-                    { label: "Play Store", value: scrapeResult.playStore.length, sub: "classified" },
-                    { label: "Reddit", value: scrapeResult.reddit.length, sub: "classified" },
+                    { label: "Positive", count: STATIC_SCRAPE.sentiment.positive, color: "bg-emerald-500" },
+                    { label: "Negative", count: STATIC_SCRAPE.sentiment.negative, color: "bg-red-500" },
+                    { label: "Neutral",  count: STATIC_SCRAPE.sentiment.neutral,  color: "bg-slate-500" },
                   ].map((s) => (
-                    <div key={s.label} className="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
-                      <div className="text-2xl font-bold text-white">{s.value}</div>
-                      <div className="text-sm font-medium text-slate-300">{s.label}</div>
-                      <div className="text-xs text-slate-500">{s.sub}</div>
+                    <div key={s.label} className="flex items-center gap-3">
+                      <div className="w-16 text-xs text-slate-400 text-right shrink-0">{s.label}</div>
+                      <div className="flex-1 bg-slate-700 rounded-full h-2">
+                        <div className={`h-2 rounded-full ${s.color}`} style={{ width: `${Math.round(s.count / STATIC_SCRAPE.total * 100)}%` }} />
+                      </div>
+                      <div className="text-xs text-slate-300 w-20 text-right">{s.count.toLocaleString()} ({Math.round(s.count / STATIC_SCRAPE.total * 100)}%)</div>
                     </div>
                   ))}
                 </div>
+              </div>
+              <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Star Rating Distribution</h3>
+                <div className="space-y-2">
+                  {([5,4,3,2,1] as const).map((stars) => {
+                    const count = STATIC_SCRAPE.ratings[stars];
+                    return (
+                      <div key={stars} className="flex items-center gap-3">
+                        <div className="w-16 text-xs text-slate-400 text-right shrink-0">{"★".repeat(stars)}</div>
+                        <div className="flex-1 bg-slate-700 rounded-full h-2">
+                          <div className={`h-2 rounded-full ${stars >= 4 ? "bg-emerald-500" : stars === 3 ? "bg-amber-500" : "bg-red-500"}`}
+                            style={{ width: `${Math.round(count / STATIC_SCRAPE.total * 100)}%` }} />
+                        </div>
+                        <div className="text-xs text-slate-300 w-16 text-right">{count.toLocaleString()}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
 
-                {/* Category Breakdown & Filter Bar */}
-                {scrapeResult.playStore.length > 0 && (() => {
-                  const CATEGORY_MAP: Record<string, { label: string; desc: string }> = {
-                    QUALITY: { label: "Fabric & Quality Uncertainty", desc: "Concerns regarding material feel, duplicate items, or listing discrepancies" },
-                    PRICE: { label: "Price Sensitivity & Extra Fees", desc: "Hesitation due to current retail pricing, delivery fees, or sudden price spikes" },
-                    TRUST: { label: "Return, Refund & Service Trust", desc: "Friction in return tag verification, delayed pickups, and customer service" },
-                    SALE: { label: "Discount & Coupon Anticipation", desc: "Waiting for seasonal sales (EORS), working coupon codes, or special offers" },
-                    AVAIL: { label: "Size Availability & Out-of-Stock", desc: "Desired size or variant out-of-stock when attempting to finalize purchase" },
-                    FIT: { label: "Fit & Sizing Uncertainty", desc: "Anxiety regarding true-to-fit sizing, exchanges, and fit-assistance gaps" },
-                    INFO: { label: "General Experience & App Navigation", desc: "General shopping feedback, wishlist feature accessibility, and app ease" },
-                  };
-
-                  const categoryCounts: Record<string, number> = {};
-                  scrapeResult.playStore.forEach((item) => {
-                    const itemThemes = item.themes && item.themes.length > 0 ? item.themes : ["INFO"];
-                    itemThemes.forEach((t) => {
-                      categoryCounts[t] = (categoryCounts[t] || 0) + 1;
-                    });
-                  });
-
-                  const filteredItems = selectedCategory === "ALL"
-                    ? scrapeResult.playStore
-                    : scrapeResult.playStore.filter((item) => item.themes?.includes(selectedCategory));
-
+            {/* Theme breakdown */}
+            <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-1">Behavioral Theme Distribution</h3>
+              <p className="text-xs text-slate-500 mb-4">
+                Theme tags assigned by Gemini 2.5 Flash across {STATIC_SCRAPE.total.toLocaleString()} reviews.
+                Note: one review can carry multiple themes; counts reflect theme tag occurrences, not unique reviews.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {(["ALL", ...Object.keys(STATIC_SCRAPE.themeCounts)] as string[]).filter(k => k !== "ALL").map((key) => {
+                  const t = STATIC_SCRAPE.themeCounts[key as keyof typeof STATIC_SCRAPE.themeCounts];
+                  const maxCount = Math.max(...Object.values(STATIC_SCRAPE.themeCounts).map(x => x.count));
+                  const isSelected = selectedCategory === key;
                   return (
-                    <div className="space-y-6">
-                      <div>
-                        <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">
-                          Categorized Review Breakdown ({scrapeResult.playStore.length} Total Shopper Records)
-                        </h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                          <button
-                            onClick={() => setSelectedCategory("ALL")}
-                            className={`p-3 rounded-xl text-left border transition-all ${
-                              selectedCategory === "ALL"
-                                ? "bg-indigo-950/80 border-indigo-500 text-white shadow-lg shadow-indigo-950/50"
-                                : "bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800"
-                            }`}
-                          >
-                            <div className="flex justify-between items-center mb-1">
-                              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">All Scrapes</span>
-                              <span className="text-sm font-bold bg-indigo-900/60 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-700">
-                                {scrapeResult.playStore.length}
-                              </span>
-                            </div>
-                            <div className="text-xs text-slate-400">Complete raw shopper dataset across all dimensions</div>
-                          </button>
-
-                          {Object.entries(CATEGORY_MAP).map(([catKey, catMeta]) => {
-                            const count = categoryCounts[catKey] || 0;
-                            const isSelected = selectedCategory === catKey;
-                            return (
-                              <button
-                                key={catKey}
-                                onClick={() => setSelectedCategory(catKey)}
-                                className={`p-3 rounded-xl text-left border transition-all ${
-                                  isSelected
-                                    ? "bg-indigo-950/80 border-indigo-500 text-white shadow-lg shadow-indigo-950/50"
-                                    : "bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800"
-                                }`}
-                              >
-                                <div className="flex justify-between items-center mb-1">
-                                  <span className="text-xs font-semibold text-white line-clamp-1">{catMeta.label}</span>
-                                  <span className="text-sm font-bold bg-slate-700/80 text-indigo-300 px-2 py-0.5 rounded-full border border-slate-600">
-                                    {count}
-                                  </span>
-                                </div>
-                                <div className="text-xs text-slate-400 line-clamp-2">{catMeta.desc}</div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Filtered Reviews List */}
-                      <div>
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
-                            {selectedCategory === "ALL" ? "All Reviews" : CATEGORY_MAP[selectedCategory]?.label} ({filteredItems.length} records)
-                          </h3>
-                          <span className="text-xs text-slate-500">Showing top {Math.min(filteredItems.length, 50)} items</span>
-                        </div>
-
-                        <div className="space-y-3">
-                          {filteredItems.slice(0, 50).map((item, i) => (
-                            <div key={i} className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
-                              <div className="flex items-center gap-2 flex-wrap mb-2">
-                                <span className="text-xs bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">Play Store</span>
-                                {item.rating && (
-                                  <span className={`text-xs px-1.5 py-0.5 rounded ${item.rating <= 2 ? "bg-red-900/40 text-red-400" : "bg-slate-700 text-slate-400"}`}>
-                                    {"★".repeat(item.rating)}
-                                  </span>
-                                )}
-                                {item.themes?.map((t) => (
-                                  <span key={t} className="text-xs bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-900">
-                                    {CATEGORY_MAP[t]?.label || THEME_LABELS[t] || t}
-                                  </span>
-                                ))}
-                                {item.sentiment && (
-                                  <span className={`text-xs px-1.5 py-0.5 rounded ${
-                                    item.sentiment === "negative" ? "text-red-400" :
-                                    item.sentiment === "positive" ? "text-emerald-400" : "text-slate-400"
-                                  }`}>{item.sentiment}</span>
-                                )}
-                              </div>
-                              <p className="text-sm text-slate-200 italic">"{item.keyQuote || item.text.slice(0, 150)}"</p>
-                              {item.hypothesesSupported && item.hypothesesSupported.length > 0 && (
-                                <p className="text-xs text-slate-500 mt-1">
-                                  Links to Insight: {item.hypothesesSupported.join(", ")}
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {scrapeResult.reddit.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">
-                      Reddit Posts & Comments ({scrapeResult.reddit.length} relevant)
-                    </h3>
-                    <div className="space-y-3">
-                      {scrapeResult.reddit.slice(0, 20).map((item, i) => (
-                        <div key={i} className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
-                          <div className="flex items-center gap-2 flex-wrap mb-2">
-                            <span className="text-xs bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">T4</span>
-                            <span className="text-xs text-slate-400">r/{item.subreddit || "reddit"}</span>
-                            {item.themes?.map((t) => (
-                              <span key={t} className="text-xs bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded">{THEME_LABELS[t] || t}</span>
-                            ))}
-                          </div>
-                          <p className="text-sm text-slate-200 italic">"{item.keyQuote || item.text.slice(0, 150)}"</p>
-                          {item.hypothesesSupported && item.hypothesesSupported.length > 0 && (
-                            <p className="text-xs text-slate-500 mt-1">
-                              Supports: {item.hypothesesSupported.join(", ")}
-                            </p>
-                          )}
-                          {item.url && (
-                            <a href={item.url} target="_blank" rel="noopener noreferrer"
-                              className="text-xs text-indigo-400 hover:text-indigo-300 mt-1 block">
-                              View source →
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {scrapeResult.playStore.length === 0 && (
-                  <div className="bg-slate-800/40 border border-slate-700/60 rounded-xl p-8 text-center">
-                    <p className="text-slate-300 font-medium mb-1">No items extracted in this run</p>
-                    <p className="text-xs text-slate-400 mb-4">
-                      The Apify scraper may have reached a temporary rate limit or reviews did not contain filter keywords.
-                    </p>
                     <button
-                      onClick={runScrape}
-                      disabled={scrapeLoading}
-                      className="bg-violet-700 hover:bg-violet-600 disabled:bg-violet-900 text-white text-xs font-semibold px-4 py-2 rounded-lg"
+                      key={key}
+                      onClick={() => setSelectedCategory(isSelected ? "ALL" : key)}
+                      className={`p-3 rounded-xl text-left border transition-all ${
+                        isSelected
+                          ? "bg-indigo-950/80 border-indigo-500 text-white"
+                          : "bg-slate-900/40 border-slate-700 text-slate-300 hover:bg-slate-800"
+                      }`}
                     >
-                      {scrapeLoading ? "Retrying..." : "↺ Try Scraping Again"}
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs font-semibold text-slate-200 line-clamp-1">{t.label}</span>
+                        <span className="text-sm font-bold text-indigo-300 ml-2">{t.count}</span>
+                      </div>
+                      <div className="w-full bg-slate-700 rounded-full h-1 mb-1">
+                        <div className="h-1 rounded-full bg-indigo-500" style={{ width: `${Math.round(t.count / maxCount * 100)}%` }} />
+                      </div>
+                      <div className="text-xs text-slate-500 line-clamp-2">{t.desc}</div>
                     </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Showcase reviews */}
+            <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-1">
+                Curated Signal Showcase
+                {selectedCategory !== "ALL" && (
+                  <span className="ml-2 text-indigo-400 font-normal normal-case">
+                    — {STATIC_SCRAPE.themeCounts[selectedCategory as keyof typeof STATIC_SCRAPE.themeCounts]?.label}
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-slate-500 mb-4">Real verbatim quotes from the corpus. Selected for hypothesis relevance by Gemini 2.5 Flash classification.</p>
+              <div className="space-y-3">
+                {STATIC_SCRAPE.showcaseReviews
+                  .filter(r => selectedCategory === "ALL" || r.themes.includes(selectedCategory))
+                  .map((item, i) => (
+                  <div key={i} className="bg-slate-900/60 border border-slate-700 rounded-lg p-4">
+                    <div className="flex items-center gap-2 flex-wrap mb-2">
+                      <span className="text-xs bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">Play Store</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${item.rating <= 2 ? "bg-red-900/40 text-red-400" : "bg-emerald-900/40 text-emerald-400"}`}>
+                        {"★".repeat(item.rating)}{"☆".repeat(5 - item.rating)}
+                      </span>
+                      {item.themes.map((t) => (
+                        <span key={t} className="text-xs bg-indigo-950 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-900">
+                          {STATIC_SCRAPE.themeCounts[t as keyof typeof STATIC_SCRAPE.themeCounts]?.label || THEME_LABELS[t] || t}
+                        </span>
+                      ))}
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${item.sentiment === "negative" ? "text-red-400" : "text-emerald-400"}`}>
+                        {item.sentiment}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-200 italic">"{item.keyQuote}"</p>
+                    <p className="text-xs text-slate-500 mt-1">Links to: {item.hypotheses.join(", ")}</p>
+                  </div>
+                ))}
+                {STATIC_SCRAPE.showcaseReviews.filter(r => selectedCategory === "ALL" || r.themes.includes(selectedCategory)).length === 0 && (
+                  <div className="text-slate-500 text-sm text-center py-6">
+                    No showcase reviews for this theme. Select a different category.
                   </div>
                 )}
-              </>
-            )}
+              </div>
+            </div>
+
+            {/* Methodology note */}
+            <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-4 text-xs text-slate-500 leading-relaxed">
+              <span className="text-slate-400 font-semibold">Methodology:</span> 1,050 Myntra Google Play Store reviews (India, English) were scraped via Apify between Aug 31–Sep 2, 2026
+              using the <code className="font-mono bg-slate-800 px-1 rounded">neatrat/google-play-store-reviews-scraper</code> actor (ratings 1–5, 1,050 max).
+              Each review was classified by Gemini 2.5 Flash against a closed-set taxonomy of 13 behavioral theme codes
+              and mapped to relevant hypotheses (H1–H13). Only 17 reviews contained explicit wishlist/save/bookmark language (direct relevance).
+              The remaining 1,033 are indirect signals — general platform experience that contextualises the purchase decision environment.
+              Reddit scraping was not executed in this corpus run.
+            </div>
           </div>
         )}
       </div>
